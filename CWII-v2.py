@@ -106,6 +106,7 @@ if __name__ == '__main__':
 
         # create sephere with random size
         size = random.randrange(10, 14, 2) / 10.
+        print(size)
         sph_mesh=o3d.geometry.TriangleMesh.create_sphere(radius=size)
         mesh_list.append(sph_mesh)
         RGB_list.append([0., 0.5, 0.5])
@@ -215,8 +216,8 @@ if __name__ == '__main__':
         vis.update_renderer()
         vis.capture_screen_image(name, True)
         vis.capture_depth_image(dname, True)
-    vis.run()
-    vis.destroy_window()
+    #vis.run()
+    #vis.destroy_window()
 
     # load in the images for post processings
     img0 = cv2.imread('view0.png', -1)
@@ -246,7 +247,23 @@ if __name__ == '__main__':
     Write your code here
     '''
     ###################################
-
+    
+    #for both images, run hough circle detection, draw circles onto image and output
+    for x in range(0,2):
+        circles = []
+        frame = cv2.imread("view" + str(x) + ".png", )
+        output = frame.copy()
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame_gray = cv2.GaussianBlur(frame_gray, (5,5), 0)
+        circles = cv2.HoughCircles(frame_gray, cv2.HOUGH_GRADIENT, 1, minDist=40, param1=30, param2=34, minRadius=15, maxRadius=50)
+        print(circles)
+        for i in circles[0,:]:
+            xc = int(i[0])
+            yc = int(i[1])
+            r = int(i[2])
+            cv2.circle(output, (xc,yc), r, (0,255,0), 2)
+            cv2.circle(output, (xc,yc), 2, (0,0,255), 3)
+        cv2.imwrite("circles" + str(x) + ".png", output)
 
     ###################################
     '''
@@ -258,6 +275,26 @@ if __name__ == '__main__':
     Write your code here
     '''
     ###################################
+    def camera_part(x):
+        A = x[:, 3]
+        x = np.delete(x, 3, axis=0)
+        x = np.delete(x, 3, axis=1)
+        return x, A
+   
+    H0_cw = np.linalg.inv(H0_wc)
+    H1_cw = np.linalg.inv(H1_wc)
+
+    cam0_Rmat, cam0_Tvec = camera_part(H0_cw)
+    cam1_Rmat, cam1_Tvec = camera_part(H1_cw)
+
+    cam2_origin = np.array([0,0,0])
+    cam2_origin = transform_points(np.asarray([cam2_origin]), H1_cw)
+    T = transform_points(cam2_origin, H0_wc)
+
+    
+
+    
+
 
 
     ###################################
