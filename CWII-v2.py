@@ -106,7 +106,6 @@ if __name__ == '__main__':
 
         # create sephere with random size
         size = random.randrange(10, 14, 2) / 10.
-        print(size)
         sph_mesh=o3d.geometry.TriangleMesh.create_sphere(radius=size)
         mesh_list.append(sph_mesh)
         RGB_list.append([0., 0.5, 0.5])
@@ -163,6 +162,7 @@ if __name__ == '__main__':
 
     # camera_0 (world to camera)
     theta = np.pi * (45*5+random.uniform(-5, 5))/180.
+    print("theta:", theta)
     # theta = 0.
     H0_wc = np.array(
                 [[1,            0,              0,  0],
@@ -255,14 +255,18 @@ if __name__ == '__main__':
         output = frame.copy()
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.GaussianBlur(frame_gray, (5,5), 0)
-        circles = cv2.HoughCircles(frame_gray, cv2.HOUGH_GRADIENT, 1, minDist=40, param1=30, param2=34, minRadius=15, maxRadius=50)
-        print(circles)
+        circles = cv2.HoughCircles(frame_gray, cv2.HOUGH_GRADIENT, 1, minDist=30, param1=30, param2=32, minRadius=10, maxRadius=50)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        j = 0
         for i in circles[0,:]:
             xc = int(i[0])
             yc = int(i[1])
             r = int(i[2])
             cv2.circle(output, (xc,yc), r, (0,255,0), 2)
-            cv2.circle(output, (xc,yc), 2, (0,0,255), 3)
+            cv2.circle(output, (xc,yc), 1, (0,0,255), 1)
+            if x==0:
+                cv2.putText(output, str(j), (xc+4,yc), font, 0.4, color=(254,0,0), thickness=2)
+                j += 1
         cv2.imwrite("circles" + str(x) + ".png", output)
 
     ###################################
@@ -276,20 +280,98 @@ if __name__ == '__main__':
     '''
     ###################################
     def camera_part(x):
-        A = x[:, 3]
-        x = np.delete(x, 3, axis=0)
-        x = np.delete(x, 3, axis=1)
-        return x, A
+        pos = x[:, 3]
+        pos = np.delete(pos, 3, axis=0)
+        rmat = np.delete(x, 3, axis=0)
+        rmat = np.delete(rmat, 3, axis=1)
+        return rmat, pos
    
     H0_cw = np.linalg.inv(H0_wc)
     H1_cw = np.linalg.inv(H1_wc)
 
-    cam0_Rmat, cam0_Tvec = camera_part(H0_cw)
-    cam1_Rmat, cam1_Tvec = camera_part(H1_cw)
+    camleft_Rmat, camleft_vec = camera_part(H1_wc)
+    camright_Rmat, camright_vec = camera_part(H0_wc)
+ 
+    #PL = camleft_Rmat.dot(camleft_vec.T)
+    #PR = camright_Rmat.dot(camright_vec.T)
 
-    cam2_origin = np.array([0,0,0])
-    cam2_origin = transform_points(np.asarray([cam2_origin]), H1_cw)
-    T = transform_points(cam2_origin, H0_wc)
+    HRL = np.matmul(H1_wc, np.linalg.inv(H0_wc))
+    R_trans, T = camera_part(HRL)
+    R = R_trans.T
+
+    S = [[0, -T[2], T[1]], [T[2], 0, -T[0]], [-T[1], T[0], 0]]
+    E = np.matmul(R, S)
+    
+    M = np.linalg.inv(K.intrinsic_matrix)
+    F = np.matmul(M.T, np.matmul(E, M))
+
+    #take left camera/H1 as our reference view
+    ref_image = cv2.imread("circles1.png", )
+    other_image = cv2.imread("circles0.png", )
+    other_image_orig = other_image.copy()
+    img_height, img_width = ref_image.shape[:2]
+
+    ref_centers = []
+
+    #searching for circle centers in reference image and filter duplicates
+    for x in range(0, img_width):
+        for y in range(0, img_height):
+            (b, g, r) = ref_image[y,x]
+            if (r == 255) and (g == 0) and (b == 0):
+                ref_centers.append([x,y,1])
+    #print(ref_centers)
+    real_centers = [ref_centers[x] for x in range(len(ref_centers)) if x%4 == 0]
+
+    #calculate corresponding epipolar lines in other image (same order as circles detected)
+    corres_epipolars = []
+    for cent in real_centers:
+        cent = np.array(cent)
+        line = np.dot(F, cent.T)
+        corres_epipolars.append(line)
+    corres_epipolars = np.array(corres_epipolars)
+    #print(corres_epipolars)
+
+    #draw epipolar lines in other image
+    for i in range(0, len(real_centers)):
+        (a,b,c) = corres_epipolars[i]
+        x = int(round(-c/a))
+        start = (x,0)
+        y = img_height
+        x1 = int(round((-c - b*y) / a))
+        end = (x1, img_height)
+        cv2.line(other_image, start, end, (255,0,0), 2)
+    cv2.imwrite("corres_epilines.png", other_image)
+
+    #search along each epipolar line to find corresponding circle center, tolerance of +/-1 y coord
+    corres_centers = []
+    for line in corres_epipolars:
+        (a,b,c) = line
+        for y in range(0, img_height):
+            x = int(round((-c - b*y) / a))
+            if x < 0:
+                continue
+            (b,g,r) = other_image_orig[y,x]
+            if (r == 255):
+                corres_centers.append([x,y,1])
+                continue
+            (b,g,r) = other_image_orig[y-1,x]
+            if (r == 255):
+                corres_centers.append([x,y,1])
+                continue
+            (b,g,r) = other_image_orig[y+1,x]
+            if (r == 255):
+                corres_centers.append([x,y,1])
+                continue
+    print(corres_centers)
+
+    
+
+
+
+
+
+
+
 
     
 
