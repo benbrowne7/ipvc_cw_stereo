@@ -249,7 +249,7 @@ if __name__ == '__main__':
     ###################################
     
     #for both images, run hough circle detection, draw circles onto image and output
-    for x in range(0,2):
+    for x in range(1,-1, -1):
         circles = []
         frame = cv2.imread("view" + str(x) + ".png", )
         output = frame.copy()
@@ -263,10 +263,22 @@ if __name__ == '__main__':
             yc = int(i[1])
             r = int(i[2])
             cv2.circle(output, (xc,yc), r, (0,255,0), 2)
-            cv2.circle(output, (xc,yc), 1, (0,0,255), 1)
-            if x==0:
-                cv2.putText(output, str(j), (xc+4,yc), font, 0.4, color=(254,0,0), thickness=2)
+            if x==1:
+                output[yc,xc] = (0,0,255)
+                cv2.putText(output, str(j), (xc+4,yc), font, 0.4, color=(255,0,0), thickness=2)
                 j += 1
+                #cv2.circle(output, (xc,yc), 1, (0,0,254), 1)
+            if x==0:
+                output[yc,xc] = (255,0,254)
+                output[yc-1,xc] = (255,0,254)
+                output[yc-1,xc-1] = (255,0,254)
+                output[yc-1,xc+1] = (255,0,254)
+                output[yc+1,xc] = (255,0,254)
+                output[yc+1,xc-1] = (255,0,254)
+                output[yc,xc-1] = (255,0,254)
+                output[yc+1,xc+1] = (255,0,254)
+                output[yc,xc+1] = (255,0,254)
+                #cv2.circle(output, (xc,yc), 1, (0,0,254), 1)
         cv2.imwrite("circles" + str(x) + ".png", output)
 
     ###################################
@@ -319,8 +331,8 @@ if __name__ == '__main__':
             (b, g, r) = ref_image[y,x]
             if (r == 255) and (g == 0) and (b == 0):
                 ref_centers.append([x,y,1])
-    #print(ref_centers)
-    real_centers = [ref_centers[x] for x in range(len(ref_centers)) if x%4 == 0]
+    print("Ref Centers:", ref_centers)
+    real_centers = ref_centers
 
     #calculate corresponding epipolar lines in other image (same order as circles detected)
     corres_epipolars = []
@@ -339,30 +351,60 @@ if __name__ == '__main__':
         y = img_height
         x1 = int(round((-c - b*y) / a))
         end = (x1, img_height)
-        cv2.line(other_image, start, end, (255,0,0), 2)
-    cv2.imwrite("corres_epilines.png", other_image)
+        print(start, end)
+        cv2.line(other_image, start, end, (255,0,0), 1)
+    
 
     #search along each epipolar line to find corresponding circle center, tolerance of +/-1 y coord
     corres_centers = []
+    fresh = cv2.imread("circles0.png", )
+
     for line in corres_epipolars:
-        (a,b,c) = line
-        for y in range(0, img_height):
-            x = int(round((-c - b*y) / a))
-            if x < 0:
+        (a1,b1,c1) = line
+        print(line)
+        for x in range(0, img_width):
+            y = round((-c1 - a1*x) / b1)
+            print(x,y)
+            if y < 0:
                 continue
-            (b,g,r) = other_image_orig[y,x]
-            if (r == 255):
+            (b,g,r) = fresh[y,x]
+            if (r == 254):
+                print("found")
                 corres_centers.append([x,y,1])
-                continue
-            (b,g,r) = other_image_orig[y-1,x]
-            if (r == 255):
+                break
+            (b,g,r) = fresh[y-1,x]
+            if (r == 254):
+                print("found")
                 corres_centers.append([x,y,1])
-                continue
-            (b,g,r) = other_image_orig[y+1,x]
-            if (r == 255):
+                break
+            (b,g,r) = fresh[y+1%img_height,x]
+            if (r == 254):
+                print("found")
                 corres_centers.append([x,y,1])
-                continue
+                break
+            (b,g,r) = fresh[y-2,x]
+            if (r == 254):
+                print("found")
+                corres_centers.append([x,y,1])
+                break
+            (b,g,r) = fresh[y+2%img_height,x]
+            if (r == 254):
+                print("found")
+                corres_centers.append([x,y,1])
+                break
     print(corres_centers)
+
+    j = 0
+    for cent in corres_centers:
+        xc, yc, scrap = cent
+        cv2.putText(other_image, str(j), (xc+4,yc), font, 0.4, color=(254,0,0), thickness=2)
+        j +=1
+    cv2.imwrite("corres_epilines.png", other_image)
+
+
+
+
+    
 
     
 
