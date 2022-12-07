@@ -13,6 +13,7 @@ import cv2
 import open3d as o3d
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy import array_equal
 import math
 import random
 import argparse
@@ -77,6 +78,8 @@ if __name__ == '__main__':
 
     img_width = 640
     img_height = 480
+
+    num = args.num
 
 
     ####################################
@@ -216,8 +219,7 @@ if __name__ == '__main__':
         vis.update_renderer()
         vis.capture_screen_image(name, True)
         vis.capture_depth_image(dname, True)
-    #vis.run()
-    #vis.destroy_window()
+    
 
     # load in the images for post processings
     img0 = cv2.imread('view0.png', -1)
@@ -330,13 +332,14 @@ if __name__ == '__main__':
         for y in range(0, img_height):
             (b, g, r) = ref_image[y,x]
             if (r == 255) and (g == 0) and (b == 0):
-                ref_centers.append([x,y,1])
-    print("Ref Centers:", ref_centers)
-    real_centers = ref_centers
+                ref_centers.append(np.array([x,y,1]))
+    #print("Ref Centers:", ref_centers)
+    ref_centers = np.array(ref_centers)
+    
 
     #calculate corresponding epipolar lines in other image (same order as circles detected)
     corres_epipolars = []
-    for cent in real_centers:
+    for cent in ref_centers:
         cent = np.array(cent)
         line = np.dot(F, cent.T)
         corres_epipolars.append(line)
@@ -344,82 +347,16 @@ if __name__ == '__main__':
     #print(corres_epipolars)
 
     #draw epipolar lines in other image
-    for i in range(0, len(real_centers)):
+    for i in range(0, len(ref_centers)):
         (a,b,c) = corres_epipolars[i]
         x = int(round(-c/a))
         start = (x,0)
         y = img_height
         x1 = int(round((-c - b*y) / a))
         end = (x1, img_height)
-        print(start, end)
         cv2.line(other_image, start, end, (255,0,0), 1)
-    
-
-    #search along each epipolar line to find corresponding circle center, tolerance of +/-1 y coord
-    corres_centers = []
-    fresh = cv2.imread("circles0.png", )
-
-    for line in corres_epipolars:
-        (a1,b1,c1) = line
-        print(line)
-        for x in range(0, img_width):
-            y = round((-c1 - a1*x) / b1)
-            print(x,y)
-            if y < 0:
-                continue
-            (b,g,r) = fresh[y,x]
-            if (r == 254):
-                print("found")
-                corres_centers.append([x,y,1])
-                break
-            (b,g,r) = fresh[y-1,x]
-            if (r == 254):
-                print("found")
-                corres_centers.append([x,y,1])
-                break
-            (b,g,r) = fresh[y+1%img_height,x]
-            if (r == 254):
-                print("found")
-                corres_centers.append([x,y,1])
-                break
-            (b,g,r) = fresh[y-2,x]
-            if (r == 254):
-                print("found")
-                corres_centers.append([x,y,1])
-                break
-            (b,g,r) = fresh[y+2%img_height,x]
-            if (r == 254):
-                print("found")
-                corres_centers.append([x,y,1])
-                break
-    print(corres_centers)
-
-    j = 0
-    for cent in corres_centers:
-        xc, yc, scrap = cent
-        cv2.putText(other_image, str(j), (xc+4,yc), font, 0.4, color=(254,0,0), thickness=2)
-        j +=1
     cv2.imwrite("corres_epilines.png", other_image)
-
-
-
-
     
-
-    
-
-
-
-
-
-
-
-
-    
-
-    
-
-
 
     ###################################
     '''
@@ -429,6 +366,61 @@ if __name__ == '__main__':
     '''
     ###################################
 
+    #search along each epipolar line to find corresponding circle center, tolerance of +/-2 y coord
+    corres_centers = []
+    fresh = cv2.imread("circles0.png", )
+
+    def duplicate_check(candidate, corres_centers):
+      return next((True for elem in corres_centers if array_equal(elem, corres_centers)), False)
+
+    for line in corres_epipolars:
+        (a1,b1,c1) = line
+        #print(line)
+        for x in range(0, img_width):
+            y = round((-c1 - a1*x) / b1)
+            candidate = [x,y,1]
+            if y < 0:
+                continue
+            if y > img_height-10:
+                continue
+            (b,g,r) = fresh[y,x]
+            if (r == 254):
+                if candidate in corres_centers:
+                    continue
+                corres_centers.append(candidate)
+                break
+            (b,g,r) = fresh[y-1,x]
+            if (r == 254):
+                if candidate in corres_centers:
+                    continue
+                corres_centers.append(candidate)
+                break
+            (b,g,r) = fresh[y+1,x]
+            if (r == 254):
+                if candidate in corres_centers:
+                    continue
+                corres_centers.append(candidate)
+                break
+            (b,g,r) = fresh[y-2,x]
+            if (r == 254):
+                if candidate in corres_centers:
+                    continue
+                corres_centers.append(candidate)
+                break
+            (b,g,r) = fresh[y+2,x]
+            if (r == 254):
+                if candidate in corres_centers:
+                    continue
+                corres_centers.append(candidate)
+                break
+    #print(np.array(corres_centers))
+
+    for cent in corres_centers:
+        xc, yc, scrap = cent
+        cv2.putText(other_image, "x", (xc+4,yc), font, 0.4, color=(254,0,0), thickness=2)
+        j +=1
+    cv2.imwrite("corres_epilines.png", other_image)
+
 
     ###################################
     '''
@@ -437,6 +429,41 @@ if __name__ == '__main__':
     Write your code here
     '''
     ###################################
+
+    #check if all centers were found
+    if (len(ref_centers) != len(corres_centers)):
+        print("not all corresponding points were found: try again")
+        raise SystemExit(0)
+    
+    #get matching point pairs 
+    point_pairs = []
+    for pl in ref_centers:
+        for pr in corres_centers:
+            pr = np.array(pr)
+            g = np.dot(pr.T, np.matmul(F, pl))
+            if (-0.1 < g < 0.1):
+                point_pairs.append((pl, pr))
+    if (len(point_pairs) != num):
+        print("could not match all point pairs: try again")
+        raise SystemExit(0)
+
+
+    #calculating H matrix and corresponding point in 3D space for each pair
+    for pair in point_pairs:
+        pl, pr = pair
+        col1 = pl.T
+        col2 = np.matmul(R.T, pr)
+        col3 = np.cross(pl, np.matmul(R.T, pr))    
+        h = np.append([col1, col2], [col3], axis=0)
+        H = h.T
+        abc = np.matmul(np.linalg.inv(H), T)
+        a, b, c = abc
+        phat = (a*pl + b*(np.matmul(R.T, pr)) + T) / 2
+        print(phat)
+        #small c means a good correspondance 
+
+    vis.run()
+    vis.destroy_window()
 
 
     ###################################
